@@ -1,43 +1,32 @@
 namespace MediatorTwo.Common;
 
-public interface IRequest<TResponse> {}
-
-public interface IRequestHandler
+public class Mediator: IMediator
 {
-    public const string Handle = nameof(Handle);
-}
+    private readonly Dictionary<Type, Func<object>> Handlers = new ();
 
-public interface IRequestHandler<in TRequest, out TResponse>: IRequestHandler
-where TRequest: IRequest<TResponse>
-{
-    public TResponse Handle(TRequest request);
-}
-
-public class Mediator
-{
-    private readonly Dictionary<Type, IRequestHandler> Handlers = new ();
-
-    public void RegisterHandler(Type requestType, IRequestHandler handler)
+    public void RegisterHandler(Type requestType, Type handlerType)
     {
-        var handle = handler.GetType().GetMethod(IRequestHandler.Handle);
+        var handle = handlerType.GetMethod(IRequestHandler.Handle);
 
         if (handle is null)
         {
-            throw new ArgumentException($"{handler.GetType().Name} does not have {IRequestHandler.Handle} method");
+            throw new ArgumentException($"{handlerType.Name} does not have {IRequestHandler.Handle} method");
         }
-        
-        Handlers.Add(requestType, handler);
+
+        Handlers.Add(requestType, () => Activator.CreateInstance(handlerType)!);
     }
 
-    public TResponse Handle<TResponse>(IRequest<TResponse> request)
+    public TResponse Notify<TResponse>(IRequest<TResponse> request)
     {
-        var hasKey = Handlers.TryGetValue(request.GetType(), out var handler);
+        var hasKey = Handlers.TryGetValue(request.GetType(), out var handlerConstructor);
 
-        if (!hasKey || handler is null)
+        if (!hasKey || handlerConstructor is null)
         {
             throw new ApplicationException($"No valid handler registered for {request.GetType().Name}");
         }
 
-        return (TResponse) handler.GetType().GetMethod(IRequestHandler.Handle)!.Invoke(handler, new []{ request });
+        var handler = handlerConstructor.Invoke();
+
+        return (TResponse) handler.GetType().GetMethod(IRequestHandler.Handle)!.Invoke(handlerConstructor, new []{ request });
     }
 }

@@ -1,5 +1,6 @@
-﻿using MediatorTwo.ClassExample.Common;
-namespace MediatorTwo.ClassExample.Features;
+﻿using MediatorOne.Common;
+
+namespace MediatorOne.Features;
 
 public class Airplane : BaseComponent
 {

@@ -1,4 +1,4 @@
-﻿namespace MediatorTwo.ClassExample.Common;
+﻿namespace MediatorOne.Common;
 
 // Base Component stores a mediator's instance inside component objects, also allows to set mediator for component
 public class BaseComponent
