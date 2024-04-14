@@ -1,5 +1,5 @@
+using System.Reflection;
 using MediatorTwo.Features.Airplanes;
-using MediatorTwo.Features.Maintenance;
 
 namespace MediatorTwo.Common;
 
@@ -25,12 +25,24 @@ public class ControlTower: IControlTower
     
     public ControlTower()
     {
-        RegisterHandler(typeof(TakeoffRequest), typeof(TakeoffRequestHandler));
-        RegisterHandler(typeof(CompleteTakeoffRequest), typeof(CompleteTakeoffRequestHandler));
-        RegisterHandler(typeof(LandingRequest), typeof(LandingRequestHandler));
-        RegisterHandler(typeof(CompleteLandingRequest), typeof(CompleteLandingRequestHandler));
-        RegisterHandler(typeof(RepairRunwayRequest), typeof(RepairRunwayRequestHandler));
-        RegisterHandler(typeof(CompleteMaintenanceRequest), typeof(CompleteMaintenanceRequestHandler));
+        var assembly = Assembly.GetExecutingAssembly();
+
+        var handlers = assembly.GetTypes()
+            .Where(t => t.GetInterfaces().Any(i => i.IsGenericType &&
+               (i.GetGenericTypeDefinition() == typeof(IRequestHandler<>) ||
+                i.GetGenericTypeDefinition() == typeof(IRequestHandler<,>))))
+            .ToList();
+
+        foreach (var handler in handlers)
+        {
+            var genericHandler = handler.GetInterfaces().FirstOrDefault(i => i.IsGenericType &&
+                 (i.GetGenericTypeDefinition() == typeof(IRequestHandler<>) ||
+                  i.GetGenericTypeDefinition() == typeof(IRequestHandler<,>)));
+            
+            if (genericHandler is null) continue;
+            
+            RegisterHandler(genericHandler.GenericTypeArguments[0], handler);
+        }
     }
 
     public void RegisterHandler(Type requestType, Type handlerType)
@@ -44,63 +56,70 @@ public class ControlTower: IControlTower
 
         Handlers.Add(requestType, handlerType);
     }
-    
-    public void Notify(IRequest request)
+
+    private object GetHandler(Type requestType, params object[] dependencies)
     {
-        var hasKey = Handlers.TryGetValue(request.GetType(), out var handlerType);
+        var hasKey = Handlers.TryGetValue(requestType, out var handlerType);
 
         if (!hasKey || handlerType is null)
         {
-            throw new ApplicationException($"No valid handler registered for {request.GetType().Name}");
+            throw new ApplicationException($"No valid handler registered for {requestType.Name}");
+        }
+        
+        var parameters = handlerType.GetConstructors()[0].GetParameters();
+
+        if (parameters.Length > dependencies.Length)
+        {
+            throw new ArgumentException("Not enough parameters for constructor");
         }
 
-        var handler = Activator.CreateInstance(handlerType, this)!;
+        var foo = new List<object>();
 
-        handler.GetType().GetMethod("Handle")!.Invoke(handler, new []{ request });
+        foreach (var parameter in parameters)
+        {
+            var dependency = dependencies.FirstOrDefault(x =>
+                x.GetType() == parameter.ParameterType || x.GetType().GetInterfaces().Contains(parameter.ParameterType));
+
+            if (dependency is not null)
+            {
+                foo.Add(dependency);
+            }
+        }
+        
+        var handler = Activator.CreateInstance(handlerType, foo.ToArray())!;
+
+        return handler;
+    }
+
+    private static object ExecuteHandle(object handler, IRequest request)
+    {
+        return handler.GetType().GetMethod("Handle")!.Invoke(handler, new []{ request });
+    }
+    
+    public void Notify(IRequest request)
+    {
+        var handler = GetHandler(request.GetType(), this);
+        ExecuteHandle(handler, request);
     }
 
     public TResponse Notify<TResponse>(IRequest<TResponse> request)
     {
-        var hasKey = Handlers.TryGetValue(request.GetType(), out var handlerType);
-
-        if (!hasKey || handlerType is null)
-        {
-            throw new ApplicationException($"No valid handler registered for {request.GetType().Name}");
-        }
-
-        var handler = Activator.CreateInstance(handlerType, this)!;
-
-        return (TResponse) handler.GetType().GetMethod("Handle")!.Invoke(handler, new []{ request });
+        var handler = GetHandler(request.GetType(), this);
+        return (TResponse) ExecuteHandle(handler, request);
     }
 
     public void Notify(Airplane sender, IRequest request)
     {
-        var hasKey = Handlers.TryGetValue(request.GetType(), out var handlerType);
-
-        if (!hasKey || handlerType is null)
-        {
-            throw new ApplicationException($"No valid handler registered for {request.GetType().Name}");
-        }
-
-        var handler = Activator.CreateInstance(handlerType, sender, this)!;
-
-        handler.GetType().GetMethod("Handle")!.Invoke(handler, new []{ request });
+        var handler = GetHandler(request.GetType(), this, sender);
+        ExecuteHandle(handler, request);
     }
 
     public TResponse Notify<TResponse>(Airplane sender, IRequest<TResponse> request)
     {
-        var hasKey = Handlers.TryGetValue(request.GetType(), out var handlerType);
-
-        if (!hasKey || handlerType is null)
-        {
-            throw new ApplicationException($"No valid handler registered for {request.GetType().Name}");
-        }
-
-        var handler = Activator.CreateInstance(handlerType, sender, this)!;
-
-        return (TResponse) handler.GetType().GetMethod("Handle")!.Invoke(handler, new []{ request });
+        var handler = GetHandler(request.GetType(), this, sender);
+        return (TResponse) ExecuteHandle(handler, request);
     }
-    
+
     public int GetNextFlightNumber()
     {
         var flightNumber = _nextFlightNumber;

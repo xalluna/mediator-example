@@ -1,7 +1,7 @@
 namespace MediatorTwo.Common;
 
 public interface IRequest {}
-public interface IRequest<TResponse> {}
+public interface IRequest<TResponse>: IRequest {}
 
 public interface IRequestHandler<in TRequest>
     where TRequest: IRequest
