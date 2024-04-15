@@ -1,5 +1,6 @@
-﻿using MediatorTwo.ClassExample.Features;
-namespace MediatorTwo.ClassExample.Common;
+﻿using MediatorOne.Features;
+
+namespace MediatorOne.Common;
 
 // Concrete mediator: implements cooperative behavior by coordinating several components through the notify method from the interface.
 public class AirTrafficControlTower : IControlTower
